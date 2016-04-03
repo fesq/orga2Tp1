@@ -28,17 +28,23 @@
   %define BLOQUE_OFFSET_CLAVE        0
   %define BLOQUE_OFFSET_VALOR        3
 
+  %define NULL			     0
+  
 section .text
 
 ; =====================================
 ; tdt* tdt_crear(char* identificacion)
 tdt_crear:
-; Guardamos la identificacion
-MOV R8, RDI 
+; Guardamos la identificacion en la pila, alineandola
+PUSH RDI 
 
 ; Pedimos un bloque de 20 bytes
 MOV RDI, TDT_SIZE 
 CALL malloc
+
+; Ponemos la identificacion en R8, restaurando la pila
+; restaurando la pila a su estado original
+POP R8
 
 ; Ahora tenemos en RAX un puntero al inicio del bloque de 20 bytes
 
@@ -71,11 +77,14 @@ RET
 ; =====================================
 ; void tdt_agregarBloque(tdt* tabla, bloque* b)
 tdt_agregarBloque:
+JMP tdt_agregarBloques
 
 ; =====================================
 ; void tdt_agregarBloques(tdt* tabla, bloque** b)
 tdt_agregarBloques:
 ; En RDI tenemos la tabla, RSI el bloque
+PUSH RBP ; Alineamos la pila
+.agregar:
 CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
 JE .done
      ; Por cada bloque vamos a llamar a tdt_agregar, con la signatura:
@@ -83,12 +92,21 @@ JE .done
      ; Por lo que: RDI <- tabla, RSI <- clave, RDX <- valor
      ; Ya tenemos tabla y clave en sus registros, agregamos puntero a valor
      MOV RDX, RSI
-     ADD RDX, BLOQUE_OFFSET_VALOR 
+     ADD RDX, BLOQUE_OFFSET_VALOR
+     ; Guardamos las posiciones del bloque y tabla 
+     PUSH RSI
+     PUSH RDI
+     
      CALL tdt_agregar
+     
+     POP RDI
+     POP RSI
+     
      ADD RSI, BLOQUE_SIZE
-     JMP tdt_agregarBloques
-   .done:
-   RET
+     JMP .agregar
+.done:
+POP RBP
+RET
         
 ; =====================================
 ; void tdt_borrarBloque(tdt* tabla, bloque* b)
@@ -101,23 +119,95 @@ tdt_borrarBloques:
 ; =====================================
 ; void tdt_traducir(tdt* tabla, uint8_t* clave, uint8_t* valor)
 tdt_traducir:
+; En RDI : tabla, RSI : clave (3bytes), RDX : valor(15bytes)
+PUSH RBP
+
+MOV RAX, [RDI + TDT_OFFSET_PRIMERA]
+CMP RAX, 0
+JE .done ; Si no esta la primer tabla, early exit
+;Seguimos: RAX apunta a la primer tabla
+MOV R8, 0; R8 sera el primer id de la clave
+MOV R9, 0; R9 el segundo
+MOV R10, 0; R10 el tercero
+MOV byte R8L, [RSI]
+MOV byte R9L, [RSI+1]
+MOV byte R10L, [RSI+2]
+; R8 lo multiplicamos por el tamaño de las entradas
+; que al ser punteros, es 8
+MOV RAX, [RAX] ; Ahora RAX apunta a una tabla de N1
+LEA RAX, [RAX + R8 * 8] ; Ahora RAX esta en la posicion de la clave N1
+CMP RAX, 0
+JE .done ; Si no hay tabla de N2, early exit
+
+MOV RAX, [RAX] ; Ahora RAX apunta a una tabla de N2
+LEA RAX, [RAX + R9 * 8] ; Ahora RAX esta en la posicion de la clave N2
+CMP RAX, 0
+JE .done ; Si no hay tabla de N3, early exit
+
+MOV RAX, [RAX] ; Ahora RAX apunta a una tabla de N3
+LEA RAX, [RAX + R10 * 16] ; Ahora RAX esta en la posicion de la clave N3
+
+; Si el ultimo Byte es 0, no es un valor valido
+MOV RCX, 0
+MOV byte CL, [RAX + 15]
+CMP CL,0
+JE .done
+
+; Sino, copiamos los primeros 15 bytes al valor parametro
+MOV RCX,0
+.copiar:
+MOV R8, [RAX + RCX]
+MOV [RDX + RCX], R8
+INC RCX
+CMP RCX, 15
+JNE .copiar
+
+.done:
+POP RBP
+RET
         
 ; =====================================
 ; void tdt_traducirBloque(tdt* tabla, bloque* b)
 tdt_traducirBloque:
+JMP tdt_traducirBloques
 
 ; =====================================
 ; void tdt_traducirBloques(tdt* tabla, bloque** b)
 tdt_traducirBloques:
+; En RDI : tabla, RSI : Arreglo de bloques
+PUSH RBP ; Alineamos la pila
+.traducir:
+MOV R8, [RSI]
+CMP R8, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
+JE .done
+	; RSI apunta al inicio del bloque, que dada su disposicion 
+	; en memoria, es equivalente a apuntar a la clave
+	MOV RDX, [R8]
+	ADD RDX, BLOQUE_OFFSET_VALOR
+	; Guardamos los punteros a tabla y array de bloques
+	; para preservarlos despues de llamar a traducir	
+	PUSH RDI
+	PUSH RSI
+	; En RDI tenemos la tabla, RSI la clave y en RDX el valor
+	CALL tdt_traducir
+	
+	POP RSI
+	POP RDI
+	
+	ADD RSI, BLOQUE_SIZE
+    	JMP .traducir
+.done:
+POP RBP
+RET
         
 ; =====================================
 ; void tdt_destruir(tdt** tabla)
 tdt_destruir:
-PUSH RBP
+PUSH RBP ; <- Alineada
 PUSH R12
-PUSH R13
+PUSH R13 ; <- Alineada
 PUSH R14
-PUSH R15
+PUSH R15 ; <- Alineada
 ; En RDI: Puntero a array de tablas
 ; Pila alineada
 MOV R15, RDI
@@ -125,7 +215,8 @@ MOV R15, RDI
 .otraTabla:
 CMP R15, NULL
 JE .done
-MOV R13, [RDI+TDT_OFFSET_PRIMERA] ;Ponemos en R13 la tabla N1 con la que vamos a trabajar
+MOV R13, [R15] ; R13 ahora apunta a una tdt
+MOV R13, [R13+TDT_OFFSET_PRIMERA] ;Ponemos en R13 la tabla N1 con la que vamos a trabajar
 CMP R13, NULL ;Si no tiene nivel 1, solo hay que borrar el "encabezado" (el tdt)
 JE .destruirTDT
 ; Si seguimos aca, hay que destruir el nivel 1
@@ -147,7 +238,7 @@ JE .destruirTDT
 		PUSH R11 ; Pusheamos los registros que no se conservan por convencion
 		PUSH R10 ; Como son 2 y la pila estaba alineada, sigue alineada
 		MOV RDI, R11
-		CALL free		
+		CALL free ; Liberamos una tdtN3
 		POP R10
 		POP R11
 		.stepN2:
@@ -159,7 +250,7 @@ JE .destruirTDT
 	; Solo falta liberarla. La pila esta alineada porque al sacar R10 y 11
 	; volvio a la alineacion inicial del stack-frame que preparamos.
 	MOV RDI, R12
-	CALL free
+	CALL free ; Liberamos una tdtN2
 
 	.stepN1:
 	INC R14
@@ -167,11 +258,11 @@ JE .destruirTDT
 	JNE .cicloN1
 
 .destruirTDT:
-LEA RDI, [R15+TDT_OFFSET_IDENTIFICACION]
+MOV RDI, R13 ; Liberamos una tdtN1
 CALL free
-MOV RDI, R15
-CALL free
-ADD R15, TDT_SIZE
+MOV RDI, [R15]
+CALL free ; Liberamos una tdt
+ADD R15, 8
 
 .done:
 POP R15

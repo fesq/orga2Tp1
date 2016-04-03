@@ -6,17 +6,29 @@ void tdt_agregar(tdt* tabla, uint8_t* clave, uint8_t* valor) {
 	// Crear si no existe el nivel 1
 	if (tabla->primera == 0) {
 		tabla->primera = (tdtN1 *) malloc(sizeof(tdtN1));
+		// Inicializamos todas las entradas a 0
+		for(int i = 0; i<256; i++){
+			tabla->primera->entradas[i] = 0;
+		}
 	}
 
 	// Crear si no existe el nivel 2
 	if (tabla->primera->entradas[*clave] == 0) {
 		tabla->primera->entradas[*clave] = (tdtN2 *) malloc(sizeof(tdtN2));
+		// Inicializamos todas las entradas a 0
+		for(int i = 0; i<256; i++){
+			tabla->primera->entradas[*clave]->entradas[i] = 0;
+		}
 	}
 	tdtN2* nivel2 = tabla->primera->entradas[*clave];
 
 	// Crear si no existe el nivel 3
 	if (nivel2->entradas[*(clave + 1)] == 0) {
 		nivel2->entradas[*(clave + 1)] = (tdtN3 *) malloc(sizeof(tdtN3));
+		// Inicializamos todas las entradas a invalidas
+		for(int i = 0; i<256; i++){
+			nivel2->entradas[*(clave + 1)]->entradas[i].valido = 0;
+		}
 	}
 
 	tdtN3* nivel3 = nivel2->entradas[*(clave + 1)];
@@ -25,6 +37,7 @@ void tdt_agregar(tdt* tabla, uint8_t* clave, uint8_t* valor) {
 		nivel3->entradas[*(clave + 2)].valor.val[i] = *(valor + i);
 	}
 	nivel3->entradas[*(clave + 2)].valido = 1;
+	tabla->cantidad ++;
 }
 
 void tdt_borrar(tdt* tabla, uint8_t* clave) {
