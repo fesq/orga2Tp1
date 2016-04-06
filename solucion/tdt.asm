@@ -64,6 +64,21 @@ RET
 ; =====================================
 ; void tdt_recrear(tdt** tabla, char* identificacion)
 tdt_recrear:
+; En RDI tenemos un puntero a (o arreglo de) puntero a tabla
+; En RSI la nueva identificacion
+PUSH RBP
+	PUSH RDI
+	PUSH RSI
+	CALL tdt_destruir	
+	POP RSI 
+	POP RDI
+	
+	MOV RDI, RSI
+	CALL tdt_crear
+	MOV [RDI], RAX
+POP RBP
+RET
+
 
 ; =====================================
 ; uint32_t tdt_cantidad(tdt* tabla)
@@ -77,27 +92,35 @@ RET
 ; =====================================
 ; void tdt_agregarBloque(tdt* tabla, bloque* b)
 tdt_agregarBloque:
-JMP tdt_agregarBloques
+; En RDI tenemos la tabla, RSI el bloque
+PUSH RBP ; Alineamos la pila
+     ; Vamos a llamar a tdt_agregar, con la signatura:
+     ; void tdt agregar(tdt* tabla, uint8_t clave*, uint8_t valor* )
+     ; Por lo que: RDI <- tabla, RSI <- clave, RDX <- valor
+     MOV RDX, RSI
+     ADD RDX, BLOQUE_OFFSET_VALOR
+     CALL tdt_agregar
+
+POP RBP
+RET
 
 ; =====================================
 ; void tdt_agregarBloques(tdt* tabla, bloque** b)
 tdt_agregarBloques:
-; En RDI tenemos la tabla, RSI el bloque
+; En RDI tenemos la tabla, RSI el arreglo de bloques
 PUSH RBP ; Alineamos la pila
 .agregar:
 CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
 JE .done
-     ; Por cada bloque vamos a llamar a tdt_agregar, con la signatura:
-     ; void tdt agregar(tdt* tabla, uint8 t* clave, uint8 t* valor)
-     ; Por lo que: RDI <- tabla, RSI <- clave, RDX <- valor
-     ; Ya tenemos tabla y clave en sus registros, agregamos puntero a valor
-     MOV RDX, RSI
-     ADD RDX, BLOQUE_OFFSET_VALOR
+     ; Por cada bloque vamos a llamar a tdt_agregarBloque, con la signatura:
+     ; void tdt agregar(tdt* tabla, bloque b*)
+     ; Por lo que: RDI <- tabla, RSI <- bloque
+
      ; Guardamos las posiciones del bloque y tabla 
      PUSH RSI
      PUSH RDI
      
-     CALL tdt_agregar
+     CALL tdt_agregarBloque
      
      POP RDI
      POP RSI
@@ -111,10 +134,41 @@ RET
 ; =====================================
 ; void tdt_borrarBloque(tdt* tabla, bloque* b)
 tdt_borrarBloque:
+; En RDI tenemos la tabla, RSI el bloque
+PUSH RBP ; Alineamos la pila
+     ; Vamos a llamar a tdt_agregar, con la signatura:
+     ; void tdt agregar(tdt* tabla, uint8_t clave* )
+     ; Por lo que: RDI <- tabla, RSI <- clave
+     CALL tdt_borrar
+POP RBP
+RET
         
 ; =====================================
 ; void tdt_borrarBloques(tdt* tabla, bloque** b)
 tdt_borrarBloques:
+; En RDI tenemos la tabla, RSI el arreglo de bloques
+PUSH RBP ; Alineamos la pila
+.borrar:
+CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
+JE .done
+     ; Por cada bloque vamos a llamar a tdt_borrarBloque, con la signatura:
+     ; void tdt agregar(tdt* tabla, bloque b*)
+     ; Por lo que: RDI <- tabla, RSI <- bloque
+
+     ; Guardamos las posiciones del bloque y tabla 
+     PUSH RSI
+     PUSH RDI
+     
+     CALL tdt_borrarBloque
+     
+     POP RDI
+     POP RSI
+     
+     ADD RSI, BLOQUE_SIZE
+     JMP .borrar
+.done:
+POP RBP
+RET
         
 ; =====================================
 ; void tdt_traducir(tdt* tabla, uint8_t* clave, uint8_t* valor)
@@ -129,23 +183,25 @@ JE .done ; Si no esta la primer tabla, early exit
 MOV R8, 0; R8 sera el primer id de la clave
 MOV R9, 0; R9 el segundo
 MOV R10, 0; R10 el tercero
-MOV byte R8L, [RSI]
-MOV byte R9L, [RSI+1]
-MOV byte R10L, [RSI+2]
+MOV byte R8B, [RSI]
+MOV byte R9B, [RSI+1]
+MOV byte R10B, [RSI+2]
 ; R8 lo multiplicamos por el tamaño de las entradas
 ; que al ser punteros, es 8
-MOV RAX, [RAX] ; Ahora RAX apunta a una tabla de N1
-LEA RAX, [RAX + R8 * 8] ; Ahora RAX esta en la posicion de la clave N1
-CMP RAX, 0
+MOV RAX, [RAX + R8 * 8] 
+; Ahora RAX apunta a una tabla de N2 que esta en la posicion de la clave N1
+CMP RAX, NULL
 JE .done ; Si no hay tabla de N2, early exit
 
-MOV RAX, [RAX] ; Ahora RAX apunta a una tabla de N2
-LEA RAX, [RAX + R9 * 8] ; Ahora RAX esta en la posicion de la clave N2
-CMP RAX, 0
+MOV RAX, [RAX + R9 * 8] 
+; Ahora RAX apunta a una tabla de N3, que esta en la posicion de la clave N2
+CMP RAX, NULL
 JE .done ; Si no hay tabla de N3, early exit
 
-MOV RAX, [RAX] ; Ahora RAX apunta a una tabla de N3
-LEA RAX, [RAX + R10 * 16] ; Ahora RAX esta en la posicion de la clave N3
+
+LEA R8, [R10 * 8] ; El desplazamiemto en una tabla de nivel 3 es de 16 bytes
+LEA RAX, [RAX + R8 * 2] ; Por lo que multiplicamos el indice por 8 y luego por 2
+; Ahora RAX esta en la posicion de la clave N3
 
 ; Si el ultimo Byte es 0, no es un valor valido
 MOV RCX, 0
@@ -169,33 +225,39 @@ RET
 ; =====================================
 ; void tdt_traducirBloque(tdt* tabla, bloque* b)
 tdt_traducirBloque:
-JMP tdt_traducirBloques
-
+; En RDI tenemos la tabla, RSI el bloque
+PUSH RBP ; Alineamos la pila
+     ; Vamos a llamar a tdt_traducir, con la signatura:
+     ; void tdt_traducir(tdt* tabla, uint8_t* clave, uint8_t* valor)
+     ; Por lo que: RDI <- tabla, RSI <- clave, RDX <- valor
+     MOV RDX, RSI
+     ADD RDX, BLOQUE_OFFSET_VALOR
+     CALL tdt_traducir
+POP RBP
+RET
 ; =====================================
 ; void tdt_traducirBloques(tdt* tabla, bloque** b)
 tdt_traducirBloques:
 ; En RDI : tabla, RSI : Arreglo de bloques
 PUSH RBP ; Alineamos la pila
 .traducir:
-MOV R8, [RSI]
-CMP R8, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
+CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
 JE .done
-	; RSI apunta al inicio del bloque, que dada su disposicion 
-	; en memoria, es equivalente a apuntar a la clave
-	MOV RDX, [R8]
-	ADD RDX, BLOQUE_OFFSET_VALOR
-	; Guardamos los punteros a tabla y array de bloques
-	; para preservarlos despues de llamar a traducir	
-	PUSH RDI
-	PUSH RSI
-	; En RDI tenemos la tabla, RSI la clave y en RDX el valor
-	CALL tdt_traducir
-	
-	POP RSI
-	POP RDI
-	
-	ADD RSI, BLOQUE_SIZE
-    	JMP .traducir
+     ; Por cada bloque vamos a llamar a tdt_traducirBloque, con la signatura:
+     ; void tdt agregar(tdt* tabla, bloque b*)
+     ; Por lo que: RDI <- tabla, RSI <- bloque
+
+     ; Guardamos las posiciones del bloque y tabla 
+     PUSH RSI
+     PUSH RDI
+     
+     CALL tdt_traducirBloque
+     
+     POP RDI
+     POP RSI
+     
+     ADD RSI, BLOQUE_SIZE
+     JMP .traducir
 .done:
 POP RBP
 RET
