@@ -32,12 +32,18 @@ void tdt_agregar(tdt* tabla, uint8_t* clave, uint8_t* valor) {
 	}
 
 	tdtN3* nivel3 = nivel2->entradas[*(clave + 1)];
+
+	// Si ya existia, se sobreescribe
+
 	// Copiar byte x byte
 	for (int i = 0; i < 15; i++) {
 		nivel3->entradas[*(clave + 2)].valor.val[i] = *(valor + i);
 	}
-	nivel3->entradas[*(clave + 2)].valido = 1;
-	tabla->cantidad++;
+
+	if (!nivel3->entradas[*(clave + 2)].valido) {
+		nivel3->entradas[*(clave + 2)].valido = 1;
+		tabla->cantidad++;
+	}
 }
 
 void tdt_borrar(tdt* tabla, uint8_t* clave) {
@@ -75,8 +81,6 @@ void tdt_borrar(tdt* tabla, uint8_t* clave) {
 
 }
 
-
-
 void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
 	fputs("- ", pFile);
 	fputs(tabla->identificacion, pFile);
@@ -95,8 +99,9 @@ void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
 								uint8_t clave[3] = { n1, n2, n3 };
 								char claveHex[6];
 								int8Array_a_HexString(clave, 3, claveHex);
-								for(int i = 0; i<6; i++) fprintf(pFile,"%c",claveHex[i]);
-								fprintf(pFile," => ");
+								for (int i = 0; i < 6; i++)
+									fprintf(pFile, "%c", claveHex[i]);
+								fprintf(pFile, " => ");
 
 								// Cada byte del valor puede ocupar dos caracteres en hexa
 								// Por lo que traducimos los 20 bytes a 30 chars
@@ -104,8 +109,9 @@ void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
 								int8Array_a_HexString(
 										nivel3->entradas[n3].valor.val, 15,
 										trad);
-								for(int i = 0; i<30; i++) fprintf(pFile,"%c",trad[i]);
-								fprintf(pFile,"\n");
+								for (int i = 0; i < 30; i++)
+									fprintf(pFile, "%c", trad[i]);
+								fprintf(pFile, "\n");
 							}
 						}
 					}
@@ -116,7 +122,7 @@ void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
 }
 
 maxmin* tdt_obtenerMaxMin(tdt* tabla) {
-	maxmin* maxMin = malloc(sizeof (maxmin));
+	maxmin* maxMin = malloc(sizeof(maxmin));
 	// Inicializamos maximos en 0, minimos en 255
 	for (int i = 0; i < 15; i++) {
 		if (i < 3) {
@@ -170,5 +176,4 @@ maxmin* tdt_obtenerMaxMin(tdt* tabla) {
 	}
 	return maxMin;
 }
-
 

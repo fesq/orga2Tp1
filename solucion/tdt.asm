@@ -219,8 +219,8 @@ JE .done
 ; Sino, copiamos los primeros 15 bytes al valor parametro
 MOV RCX,0
 .copiar:
-MOV R8, [RAX + RCX]
-MOV [RDX + RCX], R8
+MOV byte R8B, [RAX + RCX]
+MOV byte [RDX + RCX], R8B
 INC RCX
 CMP RCX, 15
 JNE .copiar
