@@ -66,16 +66,21 @@ RET
 tdt_recrear:
 ; En RDI tenemos un puntero a (o arreglo de) puntero a tabla
 ; En RSI la nueva identificacion
-PUSH RBP
-	PUSH RDI
-	PUSH RSI
-	CALL tdt_destruir	
-	POP RSI 
-	POP RDI
+PUSH RBP 
+PUSH RBX
+PUSH RDI ; Pila alineada
+
+MOV RBX, RSI ; Guardamos identificacion en rbx
+; La tabla (o array de?) ya esta en RDI.
+; Ponemos un 0 en RSI
+MOV RSI,0
+CALL tdt_limpiar_y_destruir ; Limpiamos (sin liberar) la tdt	
+
+POP RDI
+MOV R8, [RDI] ; R8 es un puntero a tabla
+MOV [R8 + TDT_OFFSET_IDENTIFICACION], RBX ; ponemos la nueva identificacion
 	
-	MOV RDI, RSI
-	CALL tdt_crear
-	MOV [RDI], RAX
+POP RBX
 POP RBP
 RET
 
@@ -110,7 +115,7 @@ tdt_agregarBloques:
 ; En RDI tenemos la tabla, RSI el arreglo de bloques
 PUSH RBP ; Alineamos la pila
 .agregar:
-CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
+CMP qword [RSI], 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
 JE .done
      ; Por cada bloque vamos a llamar a tdt_agregarBloque, con la signatura:
      ; void tdt agregar(tdt* tabla, bloque b*)
@@ -118,14 +123,15 @@ JE .done
 
      ; Guardamos las posiciones del bloque y tabla 
      PUSH RSI
-     PUSH RDI
+     PUSH RDI ; guardamos la tabla porque al llamar a tdt_agregar no tenemos garantias
      
+     MOV RSI, [RSI] ; Ponemos en RSI un puntero a bloque
      CALL tdt_agregarBloque
      
      POP RDI
      POP RSI
      
-     ADD RSI, BLOQUE_SIZE
+     ADD RSI, 8
      JMP .agregar
 .done:
 POP RBP
@@ -137,7 +143,7 @@ tdt_borrarBloque:
 ; En RDI tenemos la tabla, RSI el bloque
 PUSH RBP ; Alineamos la pila
      ; Vamos a llamar a tdt_agregar, con la signatura:
-     ; void tdt agregar(tdt* tabla, uint8_t clave* )
+     ; void tdt borrar(tdt* tabla, uint8_t clave* )
      ; Por lo que: RDI <- tabla, RSI <- clave
      CALL tdt_borrar
 POP RBP
@@ -149,7 +155,7 @@ tdt_borrarBloques:
 ; En RDI tenemos la tabla, RSI el arreglo de bloques
 PUSH RBP ; Alineamos la pila
 .borrar:
-CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
+CMP qword [RSI], 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
 JE .done
      ; Por cada bloque vamos a llamar a tdt_borrarBloque, con la signatura:
      ; void tdt agregar(tdt* tabla, bloque b*)
@@ -159,12 +165,13 @@ JE .done
      PUSH RSI
      PUSH RDI
      
+     MOV RSI, [RSI] ; Ponemos en RSI un puntero a bloque
      CALL tdt_borrarBloque
      
      POP RDI
      POP RSI
      
-     ADD RSI, BLOQUE_SIZE
+     ADD RSI, 8
      JMP .borrar
 .done:
 POP RBP
@@ -241,7 +248,7 @@ tdt_traducirBloques:
 ; En RDI : tabla, RSI : Arreglo de bloques
 PUSH RBP ; Alineamos la pila
 .traducir:
-CMP RSI, 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
+CMP qword [RSI], 0 ;cuando el puntero de bloques sea 0, terminamos (null-terminate)
 JE .done
      ; Por cada bloque vamos a llamar a tdt_traducirBloque, con la signatura:
      ; void tdt agregar(tdt* tabla, bloque b*)
@@ -249,14 +256,11 @@ JE .done
 
      ; Guardamos las posiciones del bloque y tabla 
      PUSH RSI
-     PUSH RDI
-     
+     MOV RSI, [RSI] ; Ponemos en RSI un puntero a bloque
      CALL tdt_traducirBloque
-     
-     POP RDI
      POP RSI
      
-     ADD RSI, BLOQUE_SIZE
+     ADD RSI, 8
      JMP .traducir
 .done:
 POP RBP
@@ -265,17 +269,31 @@ RET
 ; =====================================
 ; void tdt_destruir(tdt** tabla)
 tdt_destruir:
+PUSH RBP
+MOV RSI, 1
+CALL tdt_limpiar_y_destruir
+POP RBP 
+RET
+
+
+; =====================================
+; void tdt_destruir(tdt** tabla, bool destruir)
+tdt_limpiar_y_destruir:
 PUSH RBP ; <- Alineada
 PUSH R12
 PUSH R13 ; <- Alineada
 PUSH R14
 PUSH R15 ; <- Alineada
+PUSH RBX ;
+SUB RSP, 8; <- Alineada
 ; En RDI: Puntero a array de tablas
+; En RSI: 1 si liberamos las tdt, 0 sino
 ; Pila alineada
 MOV R15, RDI
+MOV RBX, RSI
 
 .otraTabla:
-CMP R15, NULL
+CMP qword [R15], NULL
 JE .done
 MOV R13, [R15] ; R13 ahora apunta a una tdt
 MOV R13, [R13+TDT_OFFSET_PRIMERA] ;Ponemos en R13 la tabla N1 con la que vamos a trabajar
@@ -322,11 +340,19 @@ JE .destruirTDT
 .destruirTDT:
 MOV RDI, R13 ; Liberamos una tdtN1
 CALL free
-MOV RDI, [R15]
-CALL free ; Liberamos una tdt
+MOV R8, [R15]
+MOV dword [R8 + TDT_OFFSET_CANTIDAD], 0
+MOV qword [R8 + TDT_OFFSET_PRIMERA], 0
+CMP RBX, 0
+JE .seguir
+	MOV RDI, [R15]
+	CALL free ; Liberamos una tdt
+.seguir:
 ADD R15, 8
 
 .done:
+ADD RSP, 8
+POP RBX
 POP R15
 POP R14
 POP R13

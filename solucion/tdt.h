@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#ifndef TDT_H
+#define TDT_H
+
 /** Tipos lista y nodo **/
 
 typedef struct valor_t {
@@ -72,3 +75,5 @@ void tdt_imprimirTraducciones(tdt* tabla, FILE* pFile);
 maxmin* tdt_obtenerMaxMin(tdt* tabla);
 
 void tdt_destruir(tdt** tabla);
+
+#endif

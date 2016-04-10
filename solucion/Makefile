@@ -5,10 +5,10 @@ NASMFLAGS=-f elf64 -g -F DWARF
 
 all: main tester
 
-main: main.c tdt_c.o tdt_asm.o
+main: main.c tdt_c.o aux_c.o tdt_asm.o
 	$(CC) $(CFLAGS) $^ -o $@
 
-tester: tester.c tdt_c.o tdt_asm.o
+tester: tester.c tdt_c.o aux_c.o tdt_asm.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 tdt_asm.o: tdt.asm
@@ -17,6 +17,9 @@ tdt_asm.o: tdt.asm
 tdt_c.o: tdt.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+aux_c.o: auxiliares.c
+	$(CC) $(CFLAGS) -c $< -o $@
+	
 clean:
 	rm -f *.o
 	rm -f main tester

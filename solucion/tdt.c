@@ -75,39 +75,28 @@ void tdt_borrar(tdt* tabla, uint8_t* clave) {
 
 }
 
-void int8Array_a_HexString(uint8_t* arrayInt8, int largo, char* hexString) {
-	int hexIndex = 0;
-	for (int i = 0; i < largo; i++) {
-		char claveNi[2];
-		sprintf(claveNi, "%02X", *(arrayInt8 + i));
-		for (int j = 0; j < 2; j++) {
-			hexString[hexIndex] = claveNi[j];
-			hexIndex++;
-		}
-	}
-}
+
 
 void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
-	fputs(" - ", pFile);
+	fputs("- ", pFile);
 	fputs(tabla->identificacion, pFile);
-	fputs(" - \n", pFile);
+	fputs(" -\n", pFile);
 
 	if (tabla->primera != 0) {
-		for (uint8_t n1 = 0; n1 < 255; n1++) {
+		for (int n1 = 0; n1 < 256; n1++) {
 
 			if (tabla->primera->entradas[n1] != 0) {
-				for (uint8_t n2 = 0; n2 < 255; n2++) {
+				for (int n2 = 0; n2 < 256; n2++) {
 					if (tabla->primera->entradas[n1]->entradas[n2] != 0) {
-						for (uint8_t n3 = 0; n3 < 255; n3++) {
+						for (int n3 = 0; n3 < 256; n3++) {
 							tdtN3* nivel3 =
 									tabla->primera->entradas[n1]->entradas[n2];
 							if (nivel3->entradas[n3].valido) {
 								uint8_t clave[3] = { n1, n2, n3 };
 								char claveHex[6];
 								int8Array_a_HexString(clave, 3, claveHex);
-
-								fputs(claveHex, pFile);
-								fputs(" => ", pFile);
+								for(int i = 0; i<6; i++) fprintf(pFile,"%c",claveHex[i]);
+								fprintf(pFile," => ");
 
 								// Cada byte del valor puede ocupar dos caracteres en hexa
 								// Por lo que traducimos los 20 bytes a 30 chars
@@ -115,8 +104,8 @@ void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
 								int8Array_a_HexString(
 										nivel3->entradas[n3].valor.val, 15,
 										trad);
-								fputs(trad, pFile);
-								fputs("\n", pFile);
+								for(int i = 0; i<30; i++) fprintf(pFile,"%c",trad[i]);
+								fprintf(pFile,"\n");
 							}
 						}
 					}
@@ -127,57 +116,59 @@ void tdt_imprimirTraducciones(tdt* tabla, FILE *pFile) {
 }
 
 maxmin* tdt_obtenerMaxMin(tdt* tabla) {
-	return 0;
-}
-
-uint8_t clearEmptyN3(tdtN3* nivel3) {
-	uint8_t isEmpty = 1;
-	// Revisamos si quedo alguna definicion válida en nivel3
-	for (int i = 0; i < 256; i++) {
-		if (nivel3->entradas[i].valido) {
-			isEmpty = 0;
+	maxmin* maxMin = malloc(sizeof (maxmin));
+	// Inicializamos maximos en 0, minimos en 255
+	for (int i = 0; i < 15; i++) {
+		if (i < 3) {
+			maxMin->max_clave[i] = 0;
+			maxMin->min_clave[i] = 255;
 		}
+		maxMin->max_valor[i] = 0;
+		maxMin->min_valor[i] = 255;
 	}
 
-	return isEmpty;
-}
+	if (tabla->primera != 0) {
 
-uint8_t clearEmptyN2(tdtN2* nivel2) {
-	uint8_t isEmpty = 1;
-	for (int i = 0; i < 256; i++) {
-		if (nivel2->entradas[i] != 0) {
-			if (!clearEmptyN3(nivel2->entradas[i])) {
-				isEmpty = 0;
-			} else {
-				free(nivel2->entradas[i]);
-				nivel2->entradas[i] = 0;
+		for (int n1 = 0; n1 < 256; n1++) {
+			if (tabla->primera->entradas[n1] != 0) {
+
+				for (int n2 = 0; n2 < 256; n2++) {
+					if (tabla->primera->entradas[n1]->entradas[n2] != 0) {
+
+						for (int n3 = 0; n3 < 256; n3++) {
+							tdtN3* nivel3 =
+									tabla->primera->entradas[n1]->entradas[n2];
+
+							if (nivel3->entradas[n3].valido) {
+								uint8_t clave[3] = { n1, n2, n3 };
+								uint8_t* valor = nivel3->entradas[n3].valor.val;
+								if (mayorLexicografico(clave, maxMin->max_clave,
+										3)) {
+									memcpy(maxMin->max_clave, clave, 3);
+								}
+
+								if (mayorLexicografico(maxMin->min_clave, clave,
+										3)) {
+									memcpy(maxMin->min_clave, clave, 3);
+								}
+
+								if (mayorLexicografico(valor, maxMin->max_valor,
+										15)) {
+									memcpy(maxMin->max_valor, valor, 15);
+								}
+
+								if (mayorLexicografico(maxMin->min_valor, valor,
+										15)) {
+									memcpy(maxMin->min_valor, valor, 15);
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
-	return isEmpty;
+	return maxMin;
 }
 
-uint8_t clearEmptyN1(tdtN1* nivel1) {
-	uint8_t isEmpty = 1;
-	for (int i = 0; i < 256; i++) {
-		if (nivel1->entradas[i] != 0)
-			if (!clearEmptyN2(nivel1->entradas[i])) {
-				isEmpty = 0;
-			} else {
-				free(nivel1->entradas[i]);
-				nivel1->entradas[i] = 0;
-			}
-	}
-	return isEmpty;
-}
 
-uint8_t clearEmptyTdt(tdt* tabla) {
-	if (clearEmptyN1(tabla->primera)) {
-		free(tabla->primera);
-		tabla->primera = 0;
-		return 1;
-	} else {
-		return 0;
-	}
-	return 0;
-}
