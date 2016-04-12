@@ -163,7 +163,7 @@ JE .done
 
      ; Guardamos las posiciones del bloque y tabla 
      PUSH RSI
-     PUSH RDI
+     PUSH RDI ; guardamos la tabla porque al llamar a tdt_borrar no tenemos garantias
      
      MOV RSI, [RSI] ; Ponemos en RSI un puntero a bloque
      CALL tdt_borrarBloque
@@ -206,8 +206,9 @@ CMP RAX, NULL
 JE .done ; Si no hay tabla de N3, early exit
 
 
-LEA R8, [R10 * 8] ; El desplazamiemto en una tabla de nivel 3 es de 16 bytes
-LEA RAX, [RAX + R8 * 2] ; Por lo que multiplicamos el indice por 8 y luego por 2
+; El desplazamiemto en una tabla de nivel 3 es de 16 bytes
+SHL R10, 4 ; Shif-left 4 bits equivale a multiplicar por 2^4 = 16
+LEA RAX, [RAX + R10] 
 ; Ahora RAX esta en la posicion de la clave N3
 
 ; Si el ultimo Byte es 0, no es un valor valido
@@ -257,8 +258,8 @@ JE .done
      ; Guardamos las posiciones del bloque y tabla 
      PUSH RSI
      MOV RSI, [RSI] ; Ponemos en RSI un puntero a bloque
-     CALL tdt_traducirBloque
-     POP RSI
+     CALL tdt_traducirBloque 	; Aca es importante que ni en tdt_traducir_bloque 
+     POP RSI					; ni tdt_traducir se modifica RDI
      
      ADD RSI, 8
      JMP .traducir
@@ -289,8 +290,8 @@ SUB RSP, 8; <- Alineada
 ; En RDI: Puntero a array de tablas
 ; En RSI: 1 si liberamos las tdt, 0 sino
 ; Pila alineada
-MOV R15, RDI
-MOV RBX, RSI
+MOV R15, RDI ; Pasamos el puntero a puntero a tabla a un registro preservado
+MOV RBX, RSI ; Mismo el parametro que indica si borramos o no la tdt
 
 .otraTabla:
 CMP qword [R15], NULL
